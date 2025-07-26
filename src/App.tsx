@@ -1,122 +1,64 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Palette, Download, Copy, RefreshCw, Eye, Zap, Star, Menu, X } from 'lucide-react';
+import { 
+  hexToRgb, 
+  rgbToHsl, 
+  hslToHex, 
+  generatePalette, 
+  getContrastRatio, 
+  copyToClipboard,
+  isValidHex,
+  generateRandomColor
+} from './utils/colorUtils';
+import { ColorHistory } from './types/color';
 
-const ColorCraftPro = () => {
+const App: React.FC = () => {
   // 主要状态管理
   const [currentColor, setCurrentColor] = useState('#3B82F6');
-  const [colorHistory, setColorHistory] = useState(['#3B82F6', '#EF4444', '#10B981', '#F59E0B']);
-  const [generatedPalette, setGeneratedPalette] = useState([]);
-  const [activeTab, setActiveTab] = useState('picker');
+  const [colorHistory, setColorHistory] = useState<string[]>(['#3B82F6', '#EF4444', '#10B981', '#F59E0B']);
+  const [generatedPalette, setGeneratedPalette] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<'picker' | 'palette'>('picker');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [notification, setNotification] = useState('');
   
-  const canvasRef = useRef(null);
-  const fileInputRef = useRef(null);
-
-  // 颜色格式转换函数
-  const hexToRgb = (hex) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-      r: parseInt(result[1], 16),
-      g: parseInt(result[2], 16),
-      b: parseInt(result[3], 16)
-    } : null;
-  };
-
-  const rgbToHsl = (r, g, b) => {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h, s, l = (max + min) / 2;
-
-    if (max === min) {
-      h = s = 0;
-    } else {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
-      }
-      h /= 6;
-    }
-    return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
-  };
-
-  // 生成调色板
-  const generatePalette = useCallback((baseColor, type = 'complementary') => {
-    const rgb = hexToRgb(baseColor);
-    if (!rgb) return [];
-
-    const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
-    let colors = [];
-
-    switch (type) {
-      case 'complementary':
-        colors = [
-          baseColor,
-          hslToHex((hsl.h + 180) % 360, hsl.s, hsl.l),
-          hslToHex(hsl.h, Math.max(20, hsl.s - 30), Math.min(80, hsl.l + 20)),
-          hslToHex((hsl.h + 180) % 360, Math.max(20, hsl.s - 30), Math.min(80, hsl.l + 20)),
-          hslToHex(hsl.h, Math.min(100, hsl.s + 20), Math.max(20, hsl.l - 20))
-        ];
-        break;
-      case 'triadic':
-        colors = [
-          baseColor,
-          hslToHex((hsl.h + 120) % 360, hsl.s, hsl.l),
-          hslToHex((hsl.h + 240) % 360, hsl.s, hsl.l),
-          hslToHex(hsl.h, Math.max(20, hsl.s - 20), Math.min(90, hsl.l + 10)),
-          hslToHex((hsl.h + 60) % 360, hsl.s, hsl.l)
-        ];
-        break;
-      case 'monochromatic':
-        colors = [
-          hslToHex(hsl.h, hsl.s, Math.min(95, hsl.l + 40)),
-          hslToHex(hsl.h, hsl.s, Math.min(85, hsl.l + 20)),
-          baseColor,
-          hslToHex(hsl.h, hsl.s, Math.max(10, hsl.l - 20)),
-          hslToHex(hsl.h, hsl.s, Math.max(5, hsl.l - 40))
-        ];
-        break;
-      default:
-        colors = [baseColor];
-    }
-
-    return colors;
-  }, []);
-
-  // HSL转HEX
-  const hslToHex = (h, s, l) => {
-    l /= 100;
-    const a = s * Math.min(l, 1 - l) / 100;
-    const f = n => {
-      const k = (n + h / 30) % 12;
-      const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-      return Math.round(255 * color).toString(16).padStart(2, '0');
-    };
-    return `#${f(0)}${f(8)}${f(4)}`;
-  };
-
-  // 复制到剪贴板
-  const copyToClipboard = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      showNotification(`已复制: ${text}`);
-    } catch (err) {
-      showNotification('复制失败，请手动复制');
-    }
-  };
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 显示通知
-  const showNotification = (message) => {
+  const showNotification = useCallback((message: string) => {
     setNotification(message);
     setTimeout(() => setNotification(''), 2000);
-  };
+  }, []);
+
+  // 复制到剪贴板的封装函数
+  const handleCopyToClipboard = useCallback(async (text: string) => {
+    const success = await copyToClipboard(text);
+    if (success) {
+      showNotification(`已复制: ${text}`);
+    } else {
+      showNotification('复制失败，请手动复制');
+    }
+  }, [showNotification]);
+
+  // 更新颜色历史
+  const updateColorHistory = useCallback((color: string) => {
+    setColorHistory(prev => {
+      const filtered = prev.filter(c => c !== color);
+      return [color, ...filtered].slice(0, 8);
+    });
+  }, []);
+
+  // 处理颜色变化
+  const handleColorChange = useCallback((color: string) => {
+    if (isValidHex(color)) {
+      setCurrentColor(color);
+      updateColorHistory(color);
+    }
+  }, [updateColorHistory]);
 
   // 从图片提取颜色
-  const handleImageUpload = (event) => {
-    const file = event.target.files[0];
+  const handleImageUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
@@ -124,7 +66,11 @@ const ColorCraftPro = () => {
       const img = new Image();
       img.onload = () => {
         const canvas = canvasRef.current;
+        if (!canvas) return;
+        
         const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
         canvas.width = img.width;
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
@@ -134,16 +80,17 @@ const ColorCraftPro = () => {
         const colors = extractDominantColors(imageData);
         setGeneratedPalette(colors);
         setActiveTab('palette');
+        showNotification('颜色提取完成！');
       };
-      img.src = e.target.result;
+      img.src = e.target?.result as string;
     };
     reader.readAsDataURL(file);
-  };
+  }, [showNotification]);
 
   // 提取主要颜色（简化算法）
-  const extractDominantColors = (imageData) => {
+  const extractDominantColors = useCallback((imageData: ImageData): string[] => {
     const pixels = imageData.data;
-    const colorMap = {};
+    const colorMap: { [key: string]: number } = {};
     
     // 采样像素（每10个像素采样一次以提高性能）
     for (let i = 0; i < pixels.length; i += 40) {
@@ -159,32 +106,22 @@ const ColorCraftPro = () => {
       .sort(([,a], [,b]) => b - a)
       .slice(0, 5)
       .map(([color]) => color);
-  };
+  }, []);
 
-  // 颜色对比度检查
-  const getContrastRatio = (color1, color2) => {
-    const rgb1 = hexToRgb(color1);
-    const rgb2 = hexToRgb(color2);
-    
-    const luminance = (r, g, b) => {
-      const [rs, gs, bs] = [r, g, b].map(c => {
-        c = c / 255;
-        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-      });
-      return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
-    };
+  // 生成调色板
+  const handleGeneratePalette = useCallback((type: string = 'complementary') => {
+    const palette = generatePalette(currentColor, type);
+    setGeneratedPalette(palette);
+    showNotification(`${type === 'complementary' ? '互补色' : type === 'triadic' ? '三色调' : '单色调'}调色板已生成`);
+  }, [currentColor, showNotification]);
 
-    const l1 = luminance(rgb1.r, rgb1.g, rgb1.b);
-    const l2 = luminance(rgb2.r, rgb2.g, rgb2.b);
-    
-    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
-  };
-
+  // 初始化调色板
   useEffect(() => {
     setGeneratedPalette(generatePalette(currentColor, 'complementary'));
-  }, [currentColor, generatePalette]);
+  }, [currentColor]);
 
-  const ColorPicker = () => (
+  // 颜色选择器组件
+  const ColorPicker: React.FC = () => (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -195,9 +132,10 @@ const ColorCraftPro = () => {
         <div className="grid md:grid-cols-2 gap-6">
           <div>
             <div 
-              className="w-full h-32 rounded-lg border-2 border-gray-200 cursor-pointer transition-all hover:border-blue-400"
+              className="w-full h-32 rounded-lg border-2 border-gray-200 cursor-pointer transition-all hover:border-blue-400 hover:shadow-md"
               style={{ backgroundColor: currentColor }}
-              onClick={() => copyToClipboard(currentColor)}
+              onClick={() => handleCopyToClipboard(currentColor)}
+              title="点击复制颜色值"
             />
             <p className="text-sm text-gray-600 mt-2 text-center">点击复制颜色值</p>
           </div>
@@ -209,12 +147,14 @@ const ColorCraftPro = () => {
                 <input
                   type="text"
                   value={currentColor}
-                  onChange={(e) => setCurrentColor(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange={(e) => handleColorChange(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="#3B82F6"
                 />
                 <button
-                  onClick={() => copyToClipboard(currentColor)}
+                  onClick={() => handleCopyToClipboard(currentColor)}
                   className="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+                  title="复制HEX值"
                 >
                   <Copy className="w-4 h-4" />
                 </button>
@@ -226,9 +166,19 @@ const ColorCraftPro = () => {
               <input
                 type="color"
                 value={currentColor}
-                onChange={(e) => setCurrentColor(e.target.value)}
+                onChange={(e) => handleColorChange(e.target.value)}
                 className="w-full h-12 rounded-md border border-gray-300 cursor-pointer"
               />
+            </div>
+
+            <div>
+              <button
+                onClick={() => handleColorChange(generateRandomColor())}
+                className="w-full px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                随机颜色
+              </button>
             </div>
           </div>
         </div>
@@ -247,8 +197,9 @@ const ColorCraftPro = () => {
                   </span>
                   {rgb && (
                     <button
-                      onClick={() => copyToClipboard(`rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`)}
-                      className="ml-2 text-blue-500 hover:text-blue-700"
+                      onClick={() => handleCopyToClipboard(`rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`)}
+                      className="ml-2 text-blue-500 hover:text-blue-700 transition-colors"
+                      title="复制RGB值"
                     >
                       <Copy className="w-3 h-3 inline" />
                     </button>
@@ -261,8 +212,9 @@ const ColorCraftPro = () => {
                   </span>
                   {hsl && (
                     <button
-                      onClick={() => copyToClipboard(`hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`)}
-                      className="ml-2 text-blue-500 hover:text-blue-700"
+                      onClick={() => handleCopyToClipboard(`hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`)}
+                      className="ml-2 text-blue-500 hover:text-blue-700 transition-colors"
+                      title="复制HSL值"
                     >
                       <Copy className="w-3 h-3 inline" />
                     </button>
@@ -280,8 +232,8 @@ const ColorCraftPro = () => {
         <div className="flex gap-2 flex-wrap">
           {colorHistory.map((color, index) => (
             <button
-              key={index}
-              className="w-12 h-12 rounded-lg border-2 border-gray-200 hover:border-blue-400 transition-all"
+              key={`${color}-${index}`}
+              className="w-12 h-12 rounded-lg border-2 border-gray-200 hover:border-blue-400 transition-all hover:scale-105"
               style={{ backgroundColor: color }}
               onClick={() => setCurrentColor(color)}
               title={color}
@@ -292,7 +244,8 @@ const ColorCraftPro = () => {
     </div>
   );
 
-  const PaletteGenerator = () => (
+  // 调色板生成器组件
+  const PaletteGenerator: React.FC = () => (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -301,18 +254,23 @@ const ColorCraftPro = () => {
         </h3>
 
         <div className="mb-6">
-          <div className="flex gap-2 mb-4">
-            {['complementary', 'triadic', 'monochromatic'].map((type) => (
+          <div className="flex gap-2 mb-4 flex-wrap">
+            {[
+              { type: 'complementary', label: '互补色' },
+              { type: 'triadic', label: '三色调' },
+              { type: 'monochromatic', label: '单色调' },
+              { type: 'analogous', label: '相邻色' }
+            ].map(({ type, label }) => (
               <button
                 key={type}
-                onClick={() => setGeneratedPalette(generatePalette(currentColor, type))}
+                onClick={() => handleGeneratePalette(type)}
                 className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm"
               >
-                {type === 'complementary' ? '互补色' : type === 'triadic' ? '三色调' : '单色调'}
+                {label}
               </button>
             ))}
             <button
-              onClick={() => setGeneratedPalette(generatePalette(currentColor, 'complementary'))}
+              onClick={() => handleGeneratePalette('complementary')}
               className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors text-sm flex items-center gap-2"
             >
               <RefreshCw className="w-4 h-4" />
@@ -324,28 +282,37 @@ const ColorCraftPro = () => {
             <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 {generatedPalette.map((color, index) => (
-                  <div key={index} className="text-center">
+                  <div key={`${color}-${index}`} className="text-center">
                     <div
-                      className="w-full h-20 rounded-lg border-2 border-gray-200 cursor-pointer hover:border-blue-400 transition-all"
+                      className="w-full h-20 rounded-lg border-2 border-gray-200 cursor-pointer hover:border-blue-400 transition-all hover:scale-105"
                       style={{ backgroundColor: color }}
-                      onClick={() => copyToClipboard(color)}
+                      onClick={() => handleCopyToClipboard(color)}
+                      title={`点击复制 ${color}`}
                     />
                     <p className="text-xs text-gray-600 mt-2 font-mono">{color}</p>
                     <div className="flex justify-center gap-1 mt-1">
                       <button
-                        onClick={() => copyToClipboard(color)}
-                        className="text-blue-500 hover:text-blue-700 text-xs"
+                        onClick={() => handleCopyToClipboard(color)}
+                        className="text-blue-500 hover:text-blue-700 text-xs transition-colors"
+                        title="复制颜色"
                       >
                         <Copy className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => setCurrentColor(color)}
+                        className="text-green-500 hover:text-green-700 text-xs transition-colors"
+                        title="设为当前颜色"
+                      >
+                        <Palette className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div className="flex gap-2 pt-4 border-t">
+              <div className="flex gap-2 pt-4 border-t flex-wrap">
                 <button
-                  onClick={() => copyToClipboard(generatedPalette.join(', '))}
+                  onClick={() => handleCopyToClipboard(generatedPalette.join(', '))}
                   className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm flex items-center gap-2"
                 >
                   <Copy className="w-4 h-4" />
@@ -365,6 +332,27 @@ const ColorCraftPro = () => {
                   <Eye className="w-4 h-4" />
                   从图片提取
                 </button>
+                <button
+                  onClick={() => {
+                    const csv = generatedPalette.map(color => {
+                      const rgb = hexToRgb(color);
+                      const hsl = rgb ? rgbToHsl(rgb.r, rgb.g, rgb.b) : null;
+                      return `${color},${rgb ? `${rgb.r},${rgb.g},${rgb.b}` : ''},${hsl ? `${hsl.h},${hsl.s},${hsl.l}` : ''}`;
+                    }).join('\n');
+                    const blob = new Blob([`HEX,R,G,B,H,S,L\n${csv}`], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'color-palette.csv';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    showNotification('调色板已导出为CSV');
+                  }}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors text-sm flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  导出CSV
+                </button>
               </div>
             </div>
           )}
@@ -375,18 +363,24 @@ const ColorCraftPro = () => {
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h4 className="text-md font-semibold mb-3">无障碍对比度检测</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 rounded-lg" style={{ backgroundColor: currentColor, color: '#ffffff' }}>
+          <div className="p-4 rounded-lg border" style={{ backgroundColor: currentColor, color: '#ffffff' }}>
             <p className="font-medium">白色文字示例</p>
             <p className="text-sm">对比度: {getContrastRatio(currentColor, '#ffffff').toFixed(2)}</p>
             <p className="text-xs">
               {getContrastRatio(currentColor, '#ffffff') >= 4.5 ? '✅ WCAG AA 通过' : '❌ 对比度不足'}
             </p>
+            <p className="text-xs">
+              {getContrastRatio(currentColor, '#ffffff') >= 7 ? '🌟 WCAG AAA 通过' : ''}
+            </p>
           </div>
-          <div className="p-4 rounded-lg" style={{ backgroundColor: currentColor, color: '#000000' }}>
+          <div className="p-4 rounded-lg border" style={{ backgroundColor: currentColor, color: '#000000' }}>
             <p className="font-medium">黑色文字示例</p>
             <p className="text-sm">对比度: {getContrastRatio(currentColor, '#000000').toFixed(2)}</p>
             <p className="text-xs">
               {getContrastRatio(currentColor, '#000000') >= 4.5 ? '✅ WCAG AA 通过' : '❌ 对比度不足'}
+            </p>
+            <p className="text-xs">
+              {getContrastRatio(currentColor, '#000000') >= 7 ? '🌟 WCAG AAA 通过' : ''}
             </p>
           </div>
         </div>
@@ -443,7 +437,7 @@ const ColorCraftPro = () => {
             {/* 移动端菜单按钮 */}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="md:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+              className="md:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
             >
               {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -616,7 +610,7 @@ const ColorCraftPro = () => {
 
       {/* 通知消息 */}
       {notification && (
-        <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-pulse">
+        <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-slide-up">
           {notification}
         </div>
       )}
@@ -635,3 +629,6 @@ const ColorCraftPro = () => {
       </div>
     </div>
   );
+};
+
+export default App;
